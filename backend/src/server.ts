@@ -26,6 +26,7 @@ const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGINS || process.env.FRONTEND_O
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const RENDER_ORIGIN_PATTERN = /^https:\/\/[a-z0-9-]+\.onrender\.com$/i;
 const invalidatedTokens = new Set<string>();
 
 seedDemoData();
@@ -45,7 +46,14 @@ app.use(
         return;
       }
 
-      callback(null, FRONTEND_ORIGINS.includes(origin));
+      const normalizedOrigin = origin.replace(/\/+$/, "");
+      const isConfiguredOrigin = FRONTEND_ORIGINS
+        .map((allowedOrigin) => allowedOrigin.replace(/\/+$/, ""))
+        .includes(normalizedOrigin);
+
+      const isRenderPreviewOrigin = RENDER_ORIGIN_PATTERN.test(normalizedOrigin);
+
+      callback(null, isConfiguredOrigin || isRenderPreviewOrigin);
     },
     credentials: true,
     optionsSuccessStatus: 204,
