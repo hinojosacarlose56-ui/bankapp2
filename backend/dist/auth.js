@@ -31,8 +31,16 @@ const requireAuth = (invalidatedTokens) => (req, res, next) => {
     if (!decoded) {
         return res.status(401).json({ error: "Missing or invalid token" });
     }
-    const user = store_1.staffUsers.find((u) => u.id === decoded.userId && u.isActive);
-    if (!user) {
+    if (decoded.role === "customer") {
+        const customerUser = store_1.customerUsers.find((u) => u.id === decoded.userId && u.isActive);
+        if (!customerUser) {
+            return res.status(401).json({ error: "Missing or invalid token" });
+        }
+        req.auth = { ...decoded, customerId: customerUser.customerId };
+        return next();
+    }
+    const staffUser = store_1.staffUsers.find((u) => u.id === decoded.userId && u.isActive);
+    if (!staffUser) {
         return res.status(401).json({ error: "Missing or invalid token" });
     }
     req.auth = decoded;

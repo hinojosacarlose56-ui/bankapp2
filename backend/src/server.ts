@@ -763,13 +763,6 @@ app.get("/api/debug/reconciliation/:accountId", auth, allowRoles(["admin", "audi
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
 });
-import pool from "./db";
-
-pool.query("SELECT NOW()").then((res) => {
-  console.log("✅ Database connected:", res.rows[0]);
-}).catch((err) => {
-  console.error("❌ Database connection failed:", err.message);
-});
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.seedDemoData = exports.addTransaction = exports.sumTransactionsForAccount = exports.canPost = exports.maskAccountNumber = exports.nextAccountNumber = exports.nextId = exports.loginAudits = exports.transactions = exports.accounts = exports.customers = exports.staffUsers = void 0;
+exports.seedDemoData = exports.addTransaction = exports.sumTransactionsForAccount = exports.canPost = exports.maskAccountNumber = exports.nextAccountNumber = exports.nextId = exports.loginAudits = exports.transactions = exports.accounts = exports.customerUsers = exports.customers = exports.staffUsers = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const nowIso = () => new Date().toISOString();
 exports.staffUsers = [
@@ -36,6 +36,7 @@ exports.staffUsers = [
     },
 ];
 exports.customers = [];
+exports.customerUsers = [];
 exports.accounts = [];
 exports.transactions = [];
 exports.loginAudits = [];
@@ -80,7 +81,7 @@ const seedDemoData = () => {
     if (exports.customers.length > 0) {
         return;
     }
-    exports.customers.push({
+    const demoCustomer = {
         id: "c_demo",
         firstName: "Demo",
         lastName: "Customer",
@@ -88,6 +89,14 @@ const seedDemoData = () => {
         phone: "555-111-2222",
         dateOfBirth: "1990-01-01",
         address: "100 Main St, Anytown",
+        isActive: true,
+    };
+    exports.customers.push(demoCustomer);
+    exports.customerUsers.push({
+        id: "cu_demo",
+        customerId: demoCustomer.id,
+        email: demoCustomer.email,
+        passwordHash: bcryptjs_1.default.hashSync("Customer123!", 12),
         isActive: true,
     });
     const checking = {

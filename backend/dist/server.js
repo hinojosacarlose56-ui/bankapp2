@@ -12,15 +12,43 @@ const auth_1 = require("./auth");
 const store_1 = require("./store");
 const app = (0, express_1.default)();
 const PORT = Number(process.env.PORT || 4000);
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGINS || process.env.FRONTEND_ORIGIN || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+const RENDER_ORIGIN_PATTERN = /^https:\/\/[a-z0-9-]+\.onrender\.com$/i;
 const invalidatedTokens = new Set();
 (0, store_1.seedDemoData)();
 app.use((0, cors_1.default)({
-    origin: [FRONTEND_ORIGIN],
+    origin: (origin, callback) => {
+        // Allow server-to-server and tools without Origin header.
+        if (!origin) {
+            callback(null, true);
+            return;
+        }
+        // If no explicit origins are configured, allow all origins to prevent hard lockout.
+        if (FRONTEND_ORIGINS.length === 0) {
+            callback(null, true);
+            return;
+        }
+        const normalizedOrigin = origin.replace(/\/+$/, "");
+        const isConfiguredOrigin = FRONTEND_ORIGINS
+            .map((allowedOrigin) => allowedOrigin.replace(/\/+$/, ""))
+            .includes(normalizedOrigin);
+        const isRenderPreviewOrigin = RENDER_ORIGIN_PATTERN.test(normalizedOrigin);
+        callback(null, isConfiguredOrigin || isRenderPreviewOrigin);
+    },
     credentials: true,
+    optionsSuccessStatus: 204,
 }));
 app.use(express_1.default.json({ limit: "1mb" }));
 const auth = (0, auth_1.requireAuth)(invalidatedTokens);
+const canAccessCustomerRecord = (req, customerId) => {
+    if (req.auth?.role !== "customer") {
+        return true;
+    }
+    return req.auth.customerId === customerId;
+};
 app.get("/api/health", (_req, res) => {
     res.json({ ok: true, service: "bank-admin-backend" });
 });
@@ -34,27 +62,50 @@ app.post("/api/auth/login", async (req, res) => {
         return res.status(400).json({ error: "Invalid request payload" });
     }
     const { email, password } = parsed.data;
-    const user = store_1.staffUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    const passwordOk = user ? await bcryptjs_1.default.compare(password, user.passwordHash) : false;
-    const success = Boolean(user && user.isActive && passwordOk);
+    const staffUser = store_1.staffUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    const customerUser = store_1.customerUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    const staffPasswordOk = staffUser ? await bcryptjs_1.default.compare(password, staffUser.passwordHash) : false;
+    const customerPasswordOk = customerUser
+        ? await bcryptjs_1.default.compare(password, customerUser.passwordHash)
+        : false;
+    const staffSuccess = Boolean(staffUser && staffUser.isActive && staffPasswordOk);
+    const customerSuccess = Boolean(customerUser && customerUser.isActive && customerPasswordOk);
+    const success = staffSuccess || customerSuccess;
     store_1.loginAudits.push({
         email,
         ip: req.ip || "unknown",
         success,
         timestamp: new Date().toISOString(),
     });
-    if (!success || !user) {
+    if (!success) {
         return res.status(401).json({ error: "Invalid credentials" });
     }
-    const token = (0, auth_1.signToken)({ userId: user.id, role: user.role });
+    if (staffSuccess && staffUser) {
+        const token = (0, auth_1.signToken)({ userId: staffUser.id, role: staffUser.role });
+        return res.json({
+            accessToken: token,
+            user: {
+                id: staffUser.id,
+                firstName: staffUser.firstName,
+                lastName: staffUser.lastName,
+                email: staffUser.email,
+                role: staffUser.role,
+            },
+        });
+    }
+    const customer = store_1.customers.find((c) => c.id === customerUser.customerId);
+    if (!customer) {
+        return res.status(401).json({ error: "Invalid credentials" });
+    }
+    const token = (0, auth_1.signToken)({ userId: customerUser.id, role: "customer", customerId: customer.id });
     return res.json({
         accessToken: token,
         user: {
-            id: user.id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            role: user.role,
+            id: customer.id,
+            firstName: customer.firstName,
+            lastName: customer.lastName,
+            email: customer.email,
+            role: "customer",
         },
     });
 });
@@ -69,6 +120,20 @@ app.post("/api/auth/logout", auth, (req, res) => {
     return res.json({ ok: true });
 });
 app.get("/api/auth/me", auth, (req, res) => {
+    if (req.auth?.role === "customer") {
+        const customer = store_1.customers.find((c) => c.id === req.auth?.customerId);
+        if (!customer) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        return res.json({
+            id: customer.id,
+            firstName: customer.firstName,
+            lastName: customer.lastName,
+            email: customer.email,
+            role: "customer",
+            isActive: customer.isActive,
+        });
+    }
     const user = store_1.staffUsers.find((u) => u.id === req.auth?.userId);
     if (!user) {
         return res.status(404).json({ error: "User not found" });
@@ -151,7 +216,11 @@ app.delete("/api/users/:id", auth, (0, auth_1.allowRoles)(["admin"]), (req, res)
     user.isActive = false;
     return res.json({ ok: true });
 });
-app.get("/api/customers", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor"]), (req, res) => {
+app.get("/api/customers", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor", "customer"]), (req, res) => {
+    if (req.auth?.role === "customer") {
+        const customer = store_1.customers.find((c) => c.id === req.auth?.customerId);
+        return res.json(customer ? [customer] : []);
+    }
     const search = String(req.query.search || "").toLowerCase();
     const list = store_1.customers.filter((c) => {
         if (!search)
@@ -170,6 +239,7 @@ app.post("/api/customers", auth, (0, auth_1.allowRoles)(["admin"]), (req, res) =
         phone: zod_1.z.string().min(7),
         dateOfBirth: zod_1.z.string().min(4),
         address: zod_1.z.string().min(5),
+        password: zod_1.z.string().min(8).optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
@@ -177,22 +247,44 @@ app.post("/api/customers", auth, (0, auth_1.allowRoles)(["admin"]), (req, res) =
     }
     const customer = {
         id: (0, store_1.nextId)("cust"),
-        ...parsed.data,
+        firstName: parsed.data.firstName,
+        lastName: parsed.data.lastName,
+        email: parsed.data.email,
+        phone: parsed.data.phone,
+        dateOfBirth: parsed.data.dateOfBirth,
+        address: parsed.data.address,
         isActive: true,
     };
     store_1.customers.push(customer);
+    if (parsed.data.password) {
+        store_1.customerUsers.push({
+            id: (0, store_1.nextId)("cust_user"),
+            customerId: customer.id,
+            email: customer.email,
+            passwordHash: bcryptjs_1.default.hashSync(parsed.data.password, 12),
+            isActive: true,
+        });
+    }
     return res.status(201).json(customer);
 });
-app.get("/api/customers/:id", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor"]), (req, res) => {
-    const customer = store_1.customers.find((c) => c.id === req.params.id);
+app.get("/api/customers/:id", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor", "customer"]), (req, res) => {
+    const customerId = String(req.params.id);
+    if (!canAccessCustomerRecord(req, customerId)) {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    const customer = store_1.customers.find((c) => c.id === customerId);
     if (!customer) {
         return res.status(404).json({ error: "Customer not found" });
     }
     const customerAccounts = store_1.accounts.filter((a) => a.customerId === customer.id);
     return res.json({ ...customer, accounts: customerAccounts });
 });
-app.put("/api/customers/:id", auth, (0, auth_1.allowRoles)(["admin"]), (req, res) => {
-    const customer = store_1.customers.find((c) => c.id === req.params.id);
+app.put("/api/customers/:id", auth, (0, auth_1.allowRoles)(["admin", "customer"]), (req, res) => {
+    const customerId = String(req.params.id);
+    if (!canAccessCustomerRecord(req, customerId)) {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    const customer = store_1.customers.find((c) => c.id === customerId);
     if (!customer) {
         return res.status(404).json({ error: "Customer not found" });
     }
@@ -206,14 +298,27 @@ app.put("/api/customers/:id", auth, (0, auth_1.allowRoles)(["admin"]), (req, res
         return res.status(400).json({ error: "Invalid request payload" });
     }
     Object.assign(customer, parsed.data);
+    const customerUser = store_1.customerUsers.find((u) => u.customerId === customer.id && u.isActive);
+    if (customerUser && parsed.data.email) {
+        customerUser.email = parsed.data.email;
+    }
     return res.json(customer);
 });
-app.delete("/api/customers/:id", auth, (0, auth_1.allowRoles)(["admin"]), (req, res) => {
-    const customer = store_1.customers.find((c) => c.id === req.params.id);
+app.delete("/api/customers/:id", auth, (0, auth_1.allowRoles)(["admin", "customer"]), (req, res) => {
+    const customerId = String(req.params.id);
+    if (!canAccessCustomerRecord(req, customerId)) {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    const customer = store_1.customers.find((c) => c.id === customerId);
     if (!customer) {
         return res.status(404).json({ error: "Customer not found" });
     }
     customer.isActive = false;
+    store_1.customerUsers
+        .filter((u) => u.customerId === customer.id)
+        .forEach((u) => {
+        u.isActive = false;
+    });
     store_1.accounts.forEach((account) => {
         if (account.customerId === customer.id && account.status !== "closed") {
             account.status = "frozen";
@@ -221,12 +326,20 @@ app.delete("/api/customers/:id", auth, (0, auth_1.allowRoles)(["admin"]), (req, 
     });
     return res.json({ ok: true });
 });
-app.get("/api/customers/:id/accounts", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor"]), (req, res) => {
-    const customerAccounts = store_1.accounts.filter((a) => a.customerId === req.params.id);
+app.get("/api/customers/:id/accounts", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor", "customer"]), (req, res) => {
+    const customerId = String(req.params.id);
+    if (!canAccessCustomerRecord(req, customerId)) {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    const customerAccounts = store_1.accounts.filter((a) => a.customerId === customerId);
     return res.json(customerAccounts);
 });
-app.get("/api/accounts", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor"]), (_req, res) => {
-    return res.json(store_1.accounts.map((a) => ({
+app.get("/api/accounts", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor", "customer"]), (req, res) => {
+    const customerId = req.auth?.customerId;
+    const list = req.auth?.role === "customer"
+        ? store_1.accounts.filter((a) => a.customerId === customerId)
+        : store_1.accounts;
+    return res.json(list.map((a) => ({
         ...a,
         maskedAccountNumber: (0, store_1.maskAccountNumber)(a.accountNumber),
     })));
@@ -260,10 +373,13 @@ app.post("/api/accounts", auth, (0, auth_1.allowRoles)(["admin"]), (req, res) =>
     store_1.accounts.push(account);
     return res.status(201).json(account);
 });
-app.get("/api/accounts/:id", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor"]), (req, res) => {
+app.get("/api/accounts/:id", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor", "customer"]), (req, res) => {
     const account = store_1.accounts.find((a) => a.id === req.params.id);
     if (!account) {
         return res.status(404).json({ error: "Account not found" });
+    }
+    if (req.auth?.role === "customer" && account.customerId !== req.auth.customerId) {
+        return res.status(403).json({ error: "Forbidden" });
     }
     return res.json({ ...account, maskedAccountNumber: (0, store_1.maskAccountNumber)(account.accountNumber) });
 });
@@ -299,16 +415,38 @@ app.put("/api/accounts/:id", auth, (0, auth_1.allowRoles)(["admin"]), (req, res)
     }
     return res.json(account);
 });
-app.get("/api/accounts/transactions", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor"]), (req, res) => {
+app.get("/api/accounts/transactions", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor", "customer"]), (req, res) => {
     const accountId = String(req.query.accountId || "");
+    if (req.auth?.role === "customer") {
+        const allowedAccountIds = new Set(store_1.accounts
+            .filter((a) => a.customerId === req.auth?.customerId)
+            .map((a) => a.id));
+        if (accountId && !allowedAccountIds.has(accountId)) {
+            return res.status(403).json({ error: "Forbidden" });
+        }
+    }
     const list = store_1.transactions.filter((t) => (accountId ? t.accountId === accountId : true));
-    return res.json(list);
+    const filtered = req.auth?.role === "customer"
+        ? list.filter((t) => {
+            const account = store_1.accounts.find((a) => a.id === t.accountId);
+            return account?.customerId === req.auth?.customerId;
+        })
+        : list;
+    return res.json(filtered);
 });
-app.get("/api/transactions", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor"]), (req, res) => {
+app.get("/api/transactions", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor", "customer"]), (req, res) => {
     const accountId = String(req.query.accountId || "");
     const type = String(req.query.type || "");
     const startDate = String(req.query.startDate || "");
     const endDate = String(req.query.endDate || "");
+    if (req.auth?.role === "customer") {
+        const allowedAccountIds = new Set(store_1.accounts
+            .filter((a) => a.customerId === req.auth?.customerId)
+            .map((a) => a.id));
+        if (accountId && !allowedAccountIds.has(accountId)) {
+            return res.status(403).json({ error: "Forbidden" });
+        }
+    }
     const list = store_1.transactions.filter((t) => {
         if (accountId && t.accountId !== accountId)
             return false;
@@ -320,12 +458,24 @@ app.get("/api/transactions", auth, (0, auth_1.allowRoles)(["admin", "teller", "a
             return false;
         return true;
     });
-    return res.json(list);
+    const filtered = req.auth?.role === "customer"
+        ? list.filter((t) => {
+            const account = store_1.accounts.find((a) => a.id === t.accountId);
+            return account?.customerId === req.auth?.customerId;
+        })
+        : list;
+    return res.json(filtered);
 });
-app.get("/api/transactions/:id", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor"]), (req, res) => {
+app.get("/api/transactions/:id", auth, (0, auth_1.allowRoles)(["admin", "teller", "auditor", "customer"]), (req, res) => {
     const tx = store_1.transactions.find((t) => t.id === req.params.id);
     if (!tx) {
         return res.status(404).json({ error: "Transaction not found" });
+    }
+    if (req.auth?.role === "customer") {
+        const account = store_1.accounts.find((a) => a.id === tx.accountId);
+        if (!account || account.customerId !== req.auth.customerId) {
+            return res.status(403).json({ error: "Forbidden" });
+        }
     }
     return res.json(tx);
 });
@@ -334,7 +484,7 @@ const amountSchema = zod_1.z.object({
     amount: zod_1.z.number().gt(0),
     memo: zod_1.z.string().optional(),
 });
-app.post("/api/transactions/deposit", auth, (0, auth_1.allowRoles)(["admin", "teller"]), (req, res) => {
+app.post("/api/transactions/deposit", auth, (0, auth_1.allowRoles)(["admin", "teller", "customer"]), (req, res) => {
     const parsed = amountSchema.safeParse(req.body);
     if (!parsed.success) {
         return res.status(400).json({ error: "Invalid request payload" });
@@ -342,6 +492,9 @@ app.post("/api/transactions/deposit", auth, (0, auth_1.allowRoles)(["admin", "te
     const account = store_1.accounts.find((a) => a.id === parsed.data.accountId);
     if (!account) {
         return res.status(404).json({ error: "Account not found" });
+    }
+    if (req.auth?.role === "customer" && account.customerId !== req.auth.customerId) {
+        return res.status(403).json({ error: "Forbidden" });
     }
     if (!(0, store_1.canPost)(account.status)) {
         return res.status(400).json({ error: "Transactions are blocked for this account status" });
@@ -350,7 +503,7 @@ app.post("/api/transactions/deposit", auth, (0, auth_1.allowRoles)(["admin", "te
     const tx = (0, store_1.addTransaction)(account.id, "deposit", parsed.data.amount, account.balance, req.auth.userId, parsed.data.memo);
     return res.status(201).json(tx);
 });
-app.post("/api/transactions/withdrawal", auth, (0, auth_1.allowRoles)(["admin", "teller"]), (req, res) => {
+app.post("/api/transactions/withdrawal", auth, (0, auth_1.allowRoles)(["admin", "teller", "customer"]), (req, res) => {
     const parsed = amountSchema.safeParse(req.body);
     if (!parsed.success) {
         return res.status(400).json({ error: "Invalid request payload" });
@@ -358,6 +511,9 @@ app.post("/api/transactions/withdrawal", auth, (0, auth_1.allowRoles)(["admin", 
     const account = store_1.accounts.find((a) => a.id === parsed.data.accountId);
     if (!account) {
         return res.status(404).json({ error: "Account not found" });
+    }
+    if (req.auth?.role === "customer" && account.customerId !== req.auth.customerId) {
+        return res.status(403).json({ error: "Forbidden" });
     }
     if (!(0, store_1.canPost)(account.status)) {
         return res.status(400).json({ error: "Transactions are blocked for this account status" });
