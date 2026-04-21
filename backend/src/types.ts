@@ -1,11 +1,19 @@
-export type Role = "admin" | "teller" | "auditor";
+export type Role = "admin" | "teller" | "auditor" | "customer";
 
 export interface StaffUser {
   id: string;
   firstName: string;
   lastName: string;
   email: string;
-  role: Role;
+  role: Exclude<Role, "customer">;
+  passwordHash: string;
+  isActive: boolean;
+}
+
+export interface CustomerUser {
+  id: string;
+  customerId: string;
+  email: string;
   passwordHash: string;
   isActive: boolean;
 }

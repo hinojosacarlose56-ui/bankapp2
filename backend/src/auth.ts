@@ -1,11 +1,11 @@
 import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import { staffUsers } from "./store";
+import { customerUsers, staffUsers } from "./store";
 import { Role } from "./types";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 
-type AuthPayload = { userId: string; role: Role };
+type AuthPayload = { userId: string; role: Role; customerId?: string };
 
 export interface AuthenticatedRequest extends Request {
   auth?: AuthPayload;
@@ -40,8 +40,17 @@ export const requireAuth = (
     return res.status(401).json({ error: "Missing or invalid token" });
   }
 
-  const user = staffUsers.find((u) => u.id === decoded.userId && u.isActive);
-  if (!user) {
+  if (decoded.role === "customer") {
+    const customerUser = customerUsers.find((u) => u.id === decoded.userId && u.isActive);
+    if (!customerUser) {
+      return res.status(401).json({ error: "Missing or invalid token" });
+    }
+    req.auth = { ...decoded, customerId: customerUser.customerId };
+    return next();
+  }
+
+  const staffUser = staffUsers.find((u) => u.id === decoded.userId && u.isActive);
+  if (!staffUser) {
     return res.status(401).json({ error: "Missing or invalid token" });
   }
 

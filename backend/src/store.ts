@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import {
   Account,
   Customer,
+  CustomerUser,
   LoginAudit,
   StaffUser,
   Transaction,
@@ -41,6 +42,7 @@ export const staffUsers: StaffUser[] = [
 ];
 
 export const customers: Customer[] = [];
+export const customerUsers: CustomerUser[] = [];
 export const accounts: Account[] = [];
 export const transactions: Transaction[] = [];
 export const loginAudits: LoginAudit[] = [];
@@ -99,7 +101,7 @@ export const seedDemoData = (): void => {
     return;
   }
 
-  customers.push({
+  const demoCustomer: Customer = {
     id: "c_demo",
     firstName: "Demo",
     lastName: "Customer",
@@ -107,6 +109,15 @@ export const seedDemoData = (): void => {
     phone: "555-111-2222",
     dateOfBirth: "1990-01-01",
     address: "100 Main St, Anytown",
+    isActive: true,
+  };
+
+  customers.push(demoCustomer);
+  customerUsers.push({
+    id: "cu_demo",
+    customerId: demoCustomer.id,
+    email: demoCustomer.email,
+    passwordHash: bcrypt.hashSync("Customer123!", 12),
     isActive: true,
   });
 
