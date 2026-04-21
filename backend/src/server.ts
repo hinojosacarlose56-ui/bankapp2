@@ -22,15 +22,33 @@ import {
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGINS || process.env.FRONTEND_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const invalidatedTokens = new Set<string>();
 
 seedDemoData();
 
 app.use(
   cors({
-    origin: [FRONTEND_ORIGIN],
+    origin: (origin, callback) => {
+      // Allow server-to-server and tools without Origin header.
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      // If no explicit origins are configured, allow all origins to prevent hard lockout.
+      if (FRONTEND_ORIGINS.length === 0) {
+        callback(null, true);
+        return;
+      }
+
+      callback(null, FRONTEND_ORIGINS.includes(origin));
+    },
     credentials: true,
+    optionsSuccessStatus: 204,
   }),
 );
 app.use(express.json({ limit: "1mb" }));
