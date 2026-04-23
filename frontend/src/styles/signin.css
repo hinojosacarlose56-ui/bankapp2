@@ -1,0 +1,80 @@
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top, rgba(15, 23, 42, 0.06), transparent 45%),
+    linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+}
+
+.signin-card {
+  width: min(100%, 540px);
+  padding: 2rem;
+}
+
+.login-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.login-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg, #0f172a, #2563eb);
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.login-copy {
+  margin: 0.5rem 0 0;
+  color: #334155;
+}
+
+.login-footnote {
+  display: block;
+  margin-top: 1rem;
+  color: #64748b;
+}
+
+.signin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.signin-button {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.85rem 1.2rem;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+}
+
+.signin-button:hover {
+  transform: translateY(-1px);
+}
+
+.signin-button:active {
+  transform: translateY(0);
+}
+
+.signin-button:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
