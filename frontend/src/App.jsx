@@ -75,6 +75,7 @@ function App() {
   const syncAsgardeoToken = useCallback(async () => {
     if (!isAuthenticated || typeof getAccessToken !== "function") {
       localStorage.removeItem(tokenStorageKey);
+      localStorage.removeItem("bank_admin_email");
       setToken(null);
       setUser(null);
       return;
@@ -86,10 +87,22 @@ function App() {
       return;
     }
 
+    // Get user info including email
+    try {
+      const userInfo = await auth.getBasicUserInfo();
+      const email = userInfo?.email || userInfo?.username || "";
+      if (email) {
+        localStorage.setItem("bank_admin_email", email);
+        api.defaults.headers.common["x-user-email"] = email;
+      }
+    } catch {
+      // ignore if getBasicUserInfo fails
+    }
+
     localStorage.setItem(tokenStorageKey, accessToken);
     setToken(accessToken);
     setMessage("Signed in with Asgardeo.");
-  }, [getAccessToken, isAuthenticated]);
+  }, [getAccessToken, isAuthenticated, auth]);
 
   useEffect(() => {
     void syncAsgardeoToken();
@@ -97,6 +110,11 @@ function App() {
 
   useEffect(() => {
     setAuthToken(token);
+    // Restore email header from localStorage on page reload
+    const savedEmail = localStorage.getItem("bank_admin_email");
+    if (savedEmail) {
+      api.defaults.headers.common["x-user-email"] = savedEmail;
+    }
     if (!token) return;
     void loadMe();
   }, [token, loadMe]);
@@ -106,6 +124,8 @@ function App() {
       await signOut();
     }
     localStorage.removeItem(tokenStorageKey);
+    localStorage.removeItem("bank_admin_email");
+    delete api.defaults.headers.common["x-user-email"];
     setToken(null);
     setUser(null);
     setMessage("Logged out.");
@@ -115,7 +135,6 @@ function App() {
     if (!canManageCustomers) return;
     const [firstName, ...rest] = newCustomerName.trim().split(" ");
     const lastName = rest.join(" ") || "Customer";
-
     await api.post("/customers", {
       firstName,
       lastName,
@@ -124,7 +143,6 @@ function App() {
       dateOfBirth: "1992-02-02",
       address: "500 Market Street",
     });
-
     await loadCustomers();
     setMessage("Customer created.");
   };
@@ -175,7 +193,9 @@ function App() {
         <section className="card signin-card login-card">
           <p className="eyebrow">Secure portal</p>
           <h1>Bank Admin Platform</h1>
-          <p className="login-copy">Home page is public. Sign in with Asgardeo to access protected banking operations.</p>
+          <p className="login-copy">
+            Home page is public. Sign in with Asgardeo to access protected banking operations.
+          </p>
           {!hasAuthConfig ? (
             <p className="login-warning">
               Asgardeo is not configured yet. Add `VITE_ASGARDEO_CLIENT_ID` and
@@ -215,66 +235,60 @@ function App() {
             <p className="login-copy">
               Sign in to manage customers, accounts, and transactions.
             </p>
-
             <div className="signin-actions">
               <button className="signin-button" onClick={() => void signIn?.()}>
                 Sign In
               </button>
             </div>
-
             <small className="login-footnote">
               Asgardeo access is required before the banking dashboard loads.
             </small>
-
             <p className="message">{message}</p>
           </section>
         </main>
       ) : user ? (
-          <main className="container">
-            <Header user={user} onLogout={onLogout} />
-
-            <Body
-              customers={customers}
-              accounts={accounts}
-              transactions={transactions}
-              canManageCustomers={canManageCustomers}
-              canPostTransactions={canPostTransactions}
-              newCustomerName={newCustomerName}
-              setNewCustomerName={setNewCustomerName}
-              newCustomerEmail={newCustomerEmail}
-              setNewCustomerEmail={setNewCustomerEmail}
-              selectedCustomerId={selectedCustomerId}
-              setSelectedCustomerId={setSelectedCustomerId}
-              newAccountType={newAccountType}
-              setNewAccountType={setNewAccountType}
-              transactionAccountId={transactionAccountId}
-              setTransactionAccountId={setTransactionAccountId}
-              destinationAccountId={destinationAccountId}
-              setDestinationAccountId={setDestinationAccountId}
-              amount={amount}
-              setAmount={setAmount}
-              createCustomer={createCustomer}
-              createAccount={createAccount}
-              postDeposit={postDeposit}
-              postWithdrawal={postWithdrawal}
-              postTransfer={postTransfer}
-            />
-
-            <div className="signin-actions">
-              <button className="signin-button" onClick={onLogout}>
-                Sign Out
-              </button>
-            </div>
-
-            <Footer message={message} />
-          </main>
-        ) : (
-          <main className="container">
-            <section className="card signin-card">
-              <p className="message">Loading profile from API...</p>
-            </section>
-          </main>
-        )}
+        <main className="container">
+          <Header user={user} onLogout={onLogout} />
+          <Body
+            customers={customers}
+            accounts={accounts}
+            transactions={transactions}
+            canManageCustomers={canManageCustomers}
+            canPostTransactions={canPostTransactions}
+            newCustomerName={newCustomerName}
+            setNewCustomerName={setNewCustomerName}
+            newCustomerEmail={newCustomerEmail}
+            setNewCustomerEmail={setNewCustomerEmail}
+            selectedCustomerId={selectedCustomerId}
+            setSelectedCustomerId={setSelectedCustomerId}
+            newAccountType={newAccountType}
+            setNewAccountType={setNewAccountType}
+            transactionAccountId={transactionAccountId}
+            setTransactionAccountId={setTransactionAccountId}
+            destinationAccountId={destinationAccountId}
+            setDestinationAccountId={setDestinationAccountId}
+            amount={amount}
+            setAmount={setAmount}
+            createCustomer={createCustomer}
+            createAccount={createAccount}
+            postDeposit={postDeposit}
+            postWithdrawal={postWithdrawal}
+            postTransfer={postTransfer}
+          />
+          <div className="signin-actions">
+            <button className="signin-button" onClick={onLogout}>
+              Sign Out
+            </button>
+          </div>
+          <Footer message={message} />
+        </main>
+      ) : (
+        <main className="container">
+          <section className="card signin-card">
+            <p className="message">Loading profile from API...</p>
+          </section>
+        </main>
+      )}
     </>
   );
 }
