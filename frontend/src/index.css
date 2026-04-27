@@ -1,9 +1,21 @@
 :root {
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  line-height: 1.4;
+  --font-sans: "Plus Jakarta Sans", "Avenir Next", "Segoe UI", sans-serif;
+  --text-primary: #000000;
+  --text-secondary: #1747a7;
+  --surface-1: rgba(11, 19, 38, 0.82);
+  --surface-2: rgba(17, 28, 54, 0.74);
+  --border-1: rgba(133, 175, 255, 0.26);
+  --accent: #55c2ff;
+  --accent-2: #7d7bff;
+  --accent-3: #39d98a;
+  --danger: #f97373;
+  --shadow-1: 0 24px 56px rgba(2, 6, 23, 0.46);
+
+  font-family: var(--font-sans);
+  line-height: 1.45;
   font-weight: 400;
-  color: #0f172a;
-  background-color: #f1f5f9;
+  color: var(--text-primary);
+  background-color: #070d1a;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -17,5 +29,24 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #eef2f7;
+  color: var(--text-primary);
+  background:
+    radial-gradient(60rem 34rem at -2% -12%, rgba(125, 123, 255, 0.34), transparent 65%),
+    radial-gradient(48rem 34rem at 96% 2%, rgba(85, 194, 255, 0.24), transparent 66%),
+    radial-gradient(40rem 20rem at 60% 105%, rgba(57, 217, 138, 0.16), transparent 70%),
+    linear-gradient(160deg, #060b16 0%, #0b1427 45%, #0d1730 100%);
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+}
+
+::selection {
+  color: #031529;
+  background: rgba(133, 221, 255, 0.88);
 }
