@@ -26,21 +26,46 @@ function Body({
   postWithdrawal,
   postTransfer,
 }) {
+  const selectedAccount = accounts.find(a => a.id === transactionAccountId);
+
+  // ✅ Correct banking rules
+  const canDeposit =
+    canPostTransactions &&
+    selectedAccount &&
+    amount > 0;
+
+  const canWithdraw =
+    canPostTransactions &&
+    selectedAccount &&
+    amount > 0 &&
+    Number(selectedAccount.balance) >= amount;
+
+  const canTransfer =
+    canPostTransactions &&
+    transactionAccountId &&
+    destinationAccountId &&
+    transactionAccountId !== destinationAccountId &&
+    amount > 0;
+
   return (
     <section className="grid">
+      {/* ---------------- CUSTOMERS ---------------- */}
       <article className="card">
         <h2>Customers</h2>
+
         <div className="inline-fields">
           <input
             placeholder="Full name"
             value={newCustomerName}
             onChange={(e) => setNewCustomerName(e.target.value)}
           />
+
           <input
             placeholder="Email"
             value={newCustomerEmail}
             onChange={(e) => setNewCustomerEmail(e.target.value)}
           />
+
           <button onClick={createCustomer} disabled={!canManageCustomers}>
             Add Customer
           </button>
@@ -59,10 +84,15 @@ function Body({
         </ul>
       </article>
 
+      {/* ---------------- ACCOUNTS ---------------- */}
       <article className="card">
         <h2>Accounts</h2>
+
         <div className="inline-fields">
-          <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)}>
+          <select
+            value={selectedCustomerId}
+            onChange={(e) => setSelectedCustomerId(e.target.value)}
+          >
             <option value="">Select customer</option>
             {customers.map((customer) => (
               <option key={customer.id} value={customer.id}>
@@ -71,7 +101,10 @@ function Body({
             ))}
           </select>
 
-          <select value={newAccountType} onChange={(e) => setNewAccountType(e.target.value)}>
+          <select
+            value={newAccountType}
+            onChange={(e) => setNewAccountType(e.target.value)}
+          >
             <option value="checking">Checking</option>
             <option value="savings">Savings</option>
           </select>
@@ -85,7 +118,9 @@ function Body({
           {accounts.map((account) => (
             <li key={account.id}>
               <strong>{account.type}</strong>
-              <span>{account.maskedAccountNumber || account.accountNumber}</span>
+              <span>
+                {account.maskedAccountNumber || account.accountNumber}
+              </span>
               <span>${Number(account.balance).toFixed(2)}</span>
               <span>{account.status}</span>
             </li>
@@ -93,11 +128,15 @@ function Body({
         </ul>
       </article>
 
+      {/* ---------------- TRANSACTIONS ---------------- */}
       <article className="card">
         <h2>Transactions</h2>
 
         <div className="inline-fields">
-          <select value={transactionAccountId} onChange={(e) => setTransactionAccountId(e.target.value)}>
+          <select
+            value={transactionAccountId}
+            onChange={(e) => setTransactionAccountId(e.target.value)}
+          >
             <option value="">Source account</option>
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
@@ -106,7 +145,10 @@ function Body({
             ))}
           </select>
 
-          <select value={destinationAccountId} onChange={(e) => setDestinationAccountId(e.target.value)}>
+          <select
+            value={destinationAccountId}
+            onChange={(e) => setDestinationAccountId(e.target.value)}
+          >
             <option value="">Destination account</option>
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
@@ -125,13 +167,15 @@ function Body({
         </div>
 
         <div className="inline-fields">
-          <button onClick={postDeposit} disabled={!canPostTransactions}>
+          <button onClick={postDeposit} disabled={!canDeposit}>
             Deposit
           </button>
-          <button onClick={postWithdrawal} disabled={!canPostTransactions}>
+
+          <button onClick={postWithdrawal} disabled={!canWithdraw}>
             Withdraw
           </button>
-          <button onClick={postTransfer} disabled={!canPostTransactions}>
+
+          <button onClick={postTransfer} disabled={!canTransfer}>
             Transfer
           </button>
         </div>
@@ -141,7 +185,9 @@ function Body({
             <li key={tx.id}>
               <strong>{tx.type}</strong>
               <span>${Number(tx.amount).toFixed(2)}</span>
-              <span>balance ${Number(tx.balanceAfter).toFixed(2)}</span>
+              <span>
+                balance ${Number(tx.balanceAfter).toFixed(2)}
+              </span>
               <span>{new Date(tx.createdAt).toLocaleString()}</span>
             </li>
           ))}

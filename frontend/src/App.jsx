@@ -12,13 +12,16 @@ const tokenStorageKey = "bank_admin_token";
 
 function App() {
   const hasAuthConfig = Boolean(
-    import.meta.env.VITE_ASGARDEO_CLIENT_ID && import.meta.env.VITE_ASGARDEO_BASE_URL,
+    import.meta.env.VITE_ASGARDEO_CLIENT_ID &&
+      import.meta.env.VITE_ASGARDEO_BASE_URL
   );
+
   const auth = useAuthContext();
   const state = auth?.state;
   const signIn = auth?.signIn;
   const signOut = auth?.signOut;
   const getAccessToken = auth?.getAccessToken;
+
   const isAuthenticated = Boolean(state?.isAuthenticated);
   const isLoadingAuth = !auth || Boolean(state?.isLoading);
 
@@ -31,7 +34,9 @@ function App() {
   const [transactions, setTransactions] = useState([]);
 
   const [newCustomerName, setNewCustomerName] = useState("Jane Doe");
-  const [newCustomerEmail, setNewCustomerEmail] = useState("jane.doe@bank.local");
+  const [newCustomerEmail, setNewCustomerEmail] = useState(
+    "jane.doe@bank.local"
+  );
 
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [newAccountType, setNewAccountType] = useState("checking");
@@ -40,10 +45,18 @@ function App() {
   const [destinationAccountId, setDestinationAccountId] = useState("");
   const [amount, setAmount] = useState(100);
 
-  const canManageCustomers = useMemo(() => user?.role === "admin", [user]);
+  const canManageCustomers = useMemo(
+    () => user?.role === "admin",
+    [user]
+  );
+
+  // ✅ ✅ ✅ FIX: allow CUSTOMERS to post transactions
   const canPostTransactions = useMemo(
-    () => user?.role === "admin" || user?.role === "teller",
-    [user],
+    () =>
+      user?.role === "admin" ||
+      user?.role === "teller" ||
+      user?.role === "customer",
+    [user]
   );
 
   const loadCustomers = useCallback(async () => {
@@ -62,15 +75,36 @@ function App() {
     setTransactions(items.slice().reverse());
   }, []);
 
+  const loadCustomerSelf = useCallback(async () => {
+    const [accountsRes, txRes] = await Promise.all([
+      api.get("/me/accounts"),
+      api.get("/me/transactions"),
+    ]);
+    setAccounts(accountsRes.data);
+    const items = txRes.data.items || txRes.data;
+    setTransactions(items.slice().reverse());
+  }, []);
+
   const loadMe = useCallback(async () => {
     try {
       const { data } = await api.get("/auth/me");
       setUser(data);
-      await Promise.all([loadCustomers(), loadAccounts(), loadTransactions()]);
+
+      if (data.role === "customer") {
+        await loadCustomerSelf();
+      } else {
+        await Promise.all([
+          loadCustomers(),
+          loadAccounts(),
+          loadTransactions(),
+        ]);
+      }
     } catch {
-      setMessage("Signed in with Asgardeo, but backend rejected current token claims.");
+      setMessage(
+        "Signed in with Asgardeo, but backend rejected current token claims."
+      );
     }
-  }, [loadAccounts, loadCustomers, loadTransactions]);
+  }, [loadAccounts, loadCustomers, loadTransactions, loadCustomerSelf]);
 
   const syncAsgardeoToken = useCallback(async () => {
     if (!isAuthenticated || typeof getAccessToken !== "function") {
@@ -82,21 +116,22 @@ function App() {
     }
 
     const accessToken = await getAccessToken();
+
     if (!accessToken) {
       setMessage("Unable to retrieve Asgardeo access token.");
       return;
     }
 
-    // Get user info including email
     try {
       const userInfo = await auth.getBasicUserInfo();
       const email = userInfo?.email || userInfo?.username || "";
+
       if (email) {
         localStorage.setItem("bank_admin_email", email);
         api.defaults.headers.common["x-user-email"] = email;
       }
     } catch {
-      // ignore if getBasicUserInfo fails
+      // ignore
     }
 
     localStorage.setItem(tokenStorageKey, accessToken);
@@ -110,11 +145,12 @@ function App() {
 
   useEffect(() => {
     setAuthToken(token);
-    // Restore email header from localStorage on page reload
+
     const savedEmail = localStorage.getItem("bank_admin_email");
     if (savedEmail) {
       api.defaults.headers.common["x-user-email"] = savedEmail;
     }
+
     if (!token) return;
     void loadMe();
   }, [token, loadMe]);
@@ -123,9 +159,11 @@ function App() {
     if (typeof signOut === "function") {
       await signOut();
     }
+
     localStorage.removeItem(tokenStorageKey);
     localStorage.removeItem("bank_admin_email");
     delete api.defaults.headers.common["x-user-email"];
+
     setToken(null);
     setUser(null);
     setMessage("Logged out.");
@@ -133,8 +171,10 @@ function App() {
 
   const createCustomer = async () => {
     if (!canManageCustomers) return;
+
     const [firstName, ...rest] = newCustomerName.trim().split(" ");
     const lastName = rest.join(" ") || "Customer";
+
     await api.post("/customers", {
       firstName,
       lastName,
@@ -143,46 +183,60 @@ function App() {
       dateOfBirth: "1992-02-02",
       address: "500 Market Street",
     });
+
     await loadCustomers();
     setMessage("Customer created.");
   };
 
   const createAccount = async () => {
     if (!canManageCustomers || !selectedCustomerId) return;
+
     await api.post("/accounts", {
       customerId: selectedCustomerId,
       type: newAccountType,
     });
+
     await loadAccounts();
     setMessage("Account opened.");
   };
 
   const postDeposit = async () => {
     if (!canPostTransactions || !transactionAccountId) return;
-    await api.post("/transactions/deposit", { accountId: transactionAccountId, amount, memo: "MVP deposit" });
+
+    await api.post("/transactions/deposit", {
+      accountId: transactionAccountId,
+      amount,
+      memo: "MVP deposit",
+    });
+
     await Promise.all([loadAccounts(), loadTransactions()]);
     setMessage("Deposit posted.");
   };
 
   const postWithdrawal = async () => {
     if (!canPostTransactions || !transactionAccountId) return;
+
     await api.post("/transactions/withdrawal", {
       accountId: transactionAccountId,
       amount,
       memo: "MVP withdrawal",
     });
+
     await Promise.all([loadAccounts(), loadTransactions()]);
     setMessage("Withdrawal posted.");
   };
 
   const postTransfer = async () => {
-    if (!canPostTransactions || !transactionAccountId || !destinationAccountId) return;
+    if (!canPostTransactions || !transactionAccountId || !destinationAccountId)
+      return;
+
     await api.post("/transactions/transfer", {
       sourceAccountId: transactionAccountId,
       destinationAccountId,
       amount,
       memo: "MVP transfer",
     });
+
     await Promise.all([loadAccounts(), loadTransactions()]);
     setMessage("Transfer posted.");
   };
@@ -194,23 +248,20 @@ function App() {
           <p className="eyebrow">Secure portal</p>
           <h1>Bank Admin Platform</h1>
           <p className="login-copy">
-            Home page is public. Sign in with Asgardeo to access protected banking operations.
+            Home page is public. Sign in with Asgardeo to access protected
+            banking operations.
           </p>
-          {!hasAuthConfig ? (
-            <p className="login-warning">
-              Asgardeo is not configured yet. Add `VITE_ASGARDEO_CLIENT_ID` and
-              `VITE_ASGARDEO_BASE_URL` to `frontend/.env` so the sign-in button can open the
-              provider window.
-            </p>
-          ) : null}
+
           <div className="signin-actions">
-            <button className="signin-button" onClick={() => void signIn?.()} disabled={!hasAuthConfig}>
+            <button
+              className="signin-button"
+              onClick={() => void signIn?.()}
+              disabled={!hasAuthConfig}
+            >
               Sign In
             </button>
           </div>
-          <small className="login-footnote">
-            The app expects an Asgardeo access token with admin, teller, or auditor role claims.
-          </small>
+
           <p className="message">{message}</p>
         </section>
       </main>
@@ -218,78 +269,44 @@ function App() {
   }
 
   return (
-    <>
-      {isLoadingAuth ? (
-        <main className="login-shell">
-          <section className="card signin-card login-card">
-            <p className="eyebrow">Secure portal</p>
-            <h1>Bank Admin Platform</h1>
-            <p className="login-copy">Loading authentication...</p>
-          </section>
-        </main>
-      ) : !isAuthenticated ? (
-        <main className="login-shell">
-          <section className="card signin-card login-card">
-            <p className="eyebrow">Secure portal</p>
-            <h1>Bank Admin Platform</h1>
-            <p className="login-copy">
-              Sign in to manage customers, accounts, and transactions.
-            </p>
-            <div className="signin-actions">
-              <button className="signin-button" onClick={() => void signIn?.()}>
-                Sign In
-              </button>
-            </div>
-            <small className="login-footnote">
-              Asgardeo access is required before the banking dashboard loads.
-            </small>
-            <p className="message">{message}</p>
-          </section>
-        </main>
-      ) : user ? (
-        <main className="container">
-          <Header user={user} onLogout={onLogout} />
-          <Body
-            customers={customers}
-            accounts={accounts}
-            transactions={transactions}
-            canManageCustomers={canManageCustomers}
-            canPostTransactions={canPostTransactions}
-            newCustomerName={newCustomerName}
-            setNewCustomerName={setNewCustomerName}
-            newCustomerEmail={newCustomerEmail}
-            setNewCustomerEmail={setNewCustomerEmail}
-            selectedCustomerId={selectedCustomerId}
-            setSelectedCustomerId={setSelectedCustomerId}
-            newAccountType={newAccountType}
-            setNewAccountType={setNewAccountType}
-            transactionAccountId={transactionAccountId}
-            setTransactionAccountId={setTransactionAccountId}
-            destinationAccountId={destinationAccountId}
-            setDestinationAccountId={setDestinationAccountId}
-            amount={amount}
-            setAmount={setAmount}
-            createCustomer={createCustomer}
-            createAccount={createAccount}
-            postDeposit={postDeposit}
-            postWithdrawal={postWithdrawal}
-            postTransfer={postTransfer}
-          />
-          <div className="signin-actions">
-            <button className="signin-button" onClick={onLogout}>
-              Sign Out
-            </button>
-          </div>
-          <Footer message={message} />
-        </main>
-      ) : (
-        <main className="container">
-          <section className="card signin-card">
-            <p className="message">Loading profile from API...</p>
-          </section>
-        </main>
-      )}
-    </>
+    <main className="container">
+      <Header user={user} onLogout={onLogout} />
+
+      <Body
+        customers={customers}
+        accounts={accounts}
+        transactions={transactions}
+        canManageCustomers={canManageCustomers}
+        canPostTransactions={canPostTransactions}
+        newCustomerName={newCustomerName}
+        setNewCustomerName={setNewCustomerName}
+        newCustomerEmail={newCustomerEmail}
+        setNewCustomerEmail={setNewCustomerEmail}
+        selectedCustomerId={selectedCustomerId}
+        setSelectedCustomerId={setSelectedCustomerId}
+        newAccountType={newAccountType}
+        setNewAccountType={setNewAccountType}
+        transactionAccountId={transactionAccountId}
+        setTransactionAccountId={setTransactionAccountId}
+        destinationAccountId={destinationAccountId}
+        setDestinationAccountId={setDestinationAccountId}
+        amount={amount}
+        setAmount={setAmount}
+        createCustomer={createCustomer}
+        createAccount={createAccount}
+        postDeposit={postDeposit}
+        postWithdrawal={postWithdrawal}
+        postTransfer={postTransfer}
+      />
+
+      <div className="signin-actions">
+        <button className="signin-button" onClick={onLogout}>
+          Sign Out
+        </button>
+      </div>
+
+      <Footer message={message} />
+    </main>
   );
 }
 
