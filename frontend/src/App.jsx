@@ -246,7 +246,7 @@ function App() {
       <main className="container">
         <section className="card signin-card login-card">
           <p className="eyebrow">Secure portal</p>
-          <h1>Bank Admin Platform</h1>
+          <h1>Bank Platform</h1>
           <p className="login-copy">
             Home page is public. Sign in with Asgardeo to access protected
             banking operations.

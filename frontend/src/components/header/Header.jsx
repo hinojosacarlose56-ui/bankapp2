@@ -6,7 +6,7 @@ function Header({ user, onLogout }) {
     return (
       <header className="card header-row">
         <div>
-          <h1>Bank Admin Platform</h1>
+          <h1>Bank Platform</h1>
           <p>Loading user profile…</p>
         </div>
       </header>
@@ -16,7 +16,7 @@ function Header({ user, onLogout }) {
   return (
     <header className="card header-row">
       <div>
-        <h1>Bank Admin Platform</h1>
+        <h1>Bank Platform</h1>
         <p>
           Logged in as {user.firstName} {user.lastName} ({user.role})
         </p>
